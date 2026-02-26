@@ -27,6 +27,11 @@
             from { opacity: 0; transform: scale(0.95); }
             to { opacity: 1; transform: scale(1); }
         }
+
+        ::placeholder {
+            color: #94a3b8 !important;
+            opacity: 0.5 !important;
+        }
     </style>
 </head>
 <body class="bg-slate-100">
@@ -35,7 +40,6 @@
     <script type="text/babel">
         const { useState, useEffect, useCallback } = React;
 
-        // Ikon Lucide untuk React (Sederhana)
         const Icon = ({ name, className = "w-5 h-5" }) => {
             useEffect(() => {
                 if (window.lucide) {
@@ -53,6 +57,7 @@
             const [supabase, setSupabase] = useState(null);
             const [loading, setLoading] = useState(false);
             const [uploading, setUploading] = useState(false);
+            const [uploadingMateri, setUploadingMateri] = useState(false);
             const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
             const [status, setStatus] = useState({ type: null, message: '' });
 
@@ -65,6 +70,8 @@
                 paket: 1,
                 jasa_desain: false,
                 bukti_transfer_url: '',
+                materi_urls: [],
+                caption: '',
                 jadwal_tayang: '',
                 status_admin: 'pending',
                 status_posting: 'scheduled'
@@ -96,44 +103,65 @@
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file || !supabase) return;
-
-                if (!file.type.startsWith('image/')) {
-                    setStatus({ type: 'error', message: 'Hanya file gambar yang diizinkan!' });
-                    return;
-                }
-
                 setUploading(true);
-                setStatus({ type: null, message: '' });
-
                 try {
                     const fileExt = file.name.split('.').pop();
                     const fileNameUnique = `tf_${Date.now()}.${fileExt}`;
-                    
-                    const { data, error: uploadError } = await supabase.storage
-                        .from('bukti-transfer')
-                        .upload(fileNameUnique, file);
-
+                    const { error: uploadError } = await supabase.storage.from('bukti-transfer').upload(fileNameUnique, file);
                     if (uploadError) throw uploadError;
-
-                    const { data: { publicUrl } } = supabase.storage
-                        .from('bukti-transfer')
-                        .getPublicUrl(fileNameUnique);
-
+                    const { data: { publicUrl } } = supabase.storage.from('bukti-transfer').getPublicUrl(fileNameUnique);
                     setFormData(prev => ({ ...prev, bukti_transfer_url: publicUrl }));
-                    setStatus({ type: 'success', message: 'Bukti transfer berhasil diunggah!' });
                 } catch (error) {
-                    setStatus({ type: 'error', message: `Gagal unggah: ${error.message}` });
+                    setStatus({ type: 'error', message: `Gagal unggah bukti: ${error.message}` });
                 } finally {
                     setUploading(false);
                 }
             };
 
+            const handleMateriUpload = async (e) => {
+                const files = Array.from(e.target.files);
+                if (files.length === 0 || !supabase) return;
+                
+                setUploadingMateri(true);
+                const newFiles = [];
+
+                try {
+                    for (const file of files) {
+                        const fileExt = file.name.split('.').pop();
+                        const fileNameUnique = `materi_${Date.now()}_${Math.random().toString(36).substr(2, 5)}.${fileExt}`;
+                        const { error: uploadError } = await supabase.storage.from('materi-posting').upload(fileNameUnique, file);
+                        if (uploadError) throw uploadError;
+                        const { data: { publicUrl } } = supabase.storage.from('materi-posting').getPublicUrl(fileNameUnique);
+                        newFiles.push({ url: publicUrl, name: file.name });
+                    }
+                    setFormData(prev => ({ ...prev, materi_urls: [...prev.materi_urls, ...newFiles] }));
+                } catch (error) {
+                    setStatus({ type: 'error', message: `Gagal unggah materi: ${error.message}` });
+                } finally {
+                    setUploadingMateri(false);
+                }
+            };
+
+            const removeMateri = (index) => {
+                setFormData(prev => ({
+                    ...prev,
+                    materi_urls: prev.materi_urls.filter((_, i) => i !== index)
+                }));
+            };
+
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 if (!supabase) return;
+
+                // Validasi manual tambahan jika diperlukan
+                if (formData.whatsapp.length < 9) {
+                    setStatus({ type: 'error', message: 'Nomor WhatsApp minimal 9 digit!' });
+                    return;
+                }
                 
                 if (!formData.bukti_transfer_url) {
                     setStatus({ type: 'error', message: 'Mohon unggah bukti transfer terlebih dahulu!' });
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
 
@@ -160,6 +188,7 @@
                     setFormData({
                         nama_klien: '', alamat_kantor: '', whatsapp: '', posisi: '', penempatan: '',
                         paket: 1, jasa_desain: false, bukti_transfer_url: '',
+                        materi_urls: [], caption: '',
                         jadwal_tayang: '', status_admin: 'pending', status_posting: 'scheduled'
                     });
                     setStatus({ type: null, message: '' });
@@ -172,21 +201,15 @@
 
             return (
                 <div className="min-h-screen py-12 px-4 flex justify-center relative">
-                    {/* Full Screen Success Overlay */}
                     {showSuccessOverlay && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-indigo-900/95 backdrop-blur-sm p-4">
-                            <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl fade-in">
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-indigo-900/95 backdrop-blur-sm p-4 text-center">
+                            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl fade-in">
                                 <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
                                     <Icon name="check-circle" className="w-12 h-12" />
                                 </div>
-                                <h2 className="text-2xl font-black text-slate-800 mb-2">Berhasil!</h2>
-                                <p className="text-slate-600 mb-8">Data order telah tersimpan.</p>
-                                <button 
-                                    onClick={() => setShowSuccessOverlay(false)}
-                                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition-all shadow-lg active:scale-95"
-                                >
-                                    Tutup
-                                </button>
+                                <h2 className="text-2xl font-black text-slate-800 mb-2 font-['Plus_Jakarta_Sans']">Berhasil!</h2>
+                                <p className="text-slate-600 mb-8 font-['Plus_Jakarta_Sans']">Data order telah tersimpan.</p>
+                                <button onClick={() => setShowSuccessOverlay(false)} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition-all shadow-lg active:scale-95">Tutup</button>
                             </div>
                         </div>
                     )}
@@ -215,107 +238,144 @@
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                            <Icon name="user" className="w-3.5 h-3.5" /> Nama Klien / Bisnis
+                                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                            <Icon name="user" className="w-3.5 h-3.5" /> Nama Perusahaan *
                                         </label>
-                                        <input placeholder="Contoh: Kedai Kopi Majalengka" required name="nama_klien" value={formData.nama_klien} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                                        <input placeholder="Contoh: Kedai Kopi Majalengka" required name="nama_klien" value={formData.nama_klien} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-slate-700 transition-colors" />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                            <Icon name="smartphone" className="w-3.5 h-3.5" /> Nomor WhatsApp
+                                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                            <Icon name="smartphone" className="w-3.5 h-3.5" /> No. WhatsApp *
                                         </label>
-                                        <input placeholder="6281234567890" required name="whatsapp" value={formData.whatsapp} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                                        <input 
+                                            placeholder="Contoh: 6281234567890" 
+                                            required 
+                                            type="tel" 
+                                            minLength="9"
+                                            pattern="[0-9]*"
+                                            name="whatsapp" 
+                                            value={formData.whatsapp} 
+                                            onChange={handleChange} 
+                                            title="Nomor WhatsApp minimal 9 angka dan hanya berisi angka"
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-slate-700 transition-colors" 
+                                        />
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase italic">Min. 9 angka</p>
                                     </div>
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                        <Icon name="map-pin" className="w-3.5 h-3.5" /> Alamat Kantor / Bisnis Lengkap
+                                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                        <Icon name="map-pin" className="w-3.5 h-3.5" /> Alamat Lengkap Kantor *
                                     </label>
-                                    <textarea placeholder="Jl. Sudirman No. 123, Blok A, Lantai 5..." required name="alamat_kantor" value={formData.alamat_kantor} onChange={handleChange} rows="2" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none resize-none" />
+                                    <textarea placeholder="Jl. Sudirman No. 123, Blok A, Lantai 5..." required name="alamat_kantor" value={formData.alamat_kantor} onChange={handleChange} rows="2" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none resize-none text-slate-700 transition-colors" />
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                            <Icon name="briefcase" className="w-3.5 h-3.5" /> Posisi Pekerjaan
+                                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                            <Icon name="briefcase" className="w-3.5 h-3.5" /> Posisi Pekerjaan *
                                         </label>
-                                        <input placeholder="Contoh: Barista / Admin" name="posisi" value={formData.posisi} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                                        <input placeholder="Contoh: Barista / Admin" required name="posisi" value={formData.posisi} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-slate-700 transition-colors" />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                            <Icon name="map" className="w-3.5 h-3.5" /> Penempatan / Lokasi Kota
+                                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                            <Icon name="map" className="w-3.5 h-3.5" /> Penempatan / Lokasi Kota *
                                         </label>
-                                        <input placeholder="Contoh: Majalengka Kota" name="penempatan" value={formData.penempatan} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                                        <input placeholder="Contoh: Majalengka Kota" required name="penempatan" value={formData.penempatan} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-slate-700 transition-colors" />
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pilih Paket Order</label>
-                                        <select name="paket" value={formData.paket} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none">
+                                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Pilih Paket Order *</label>
+                                        <select name="paket" required value={formData.paket} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-slate-700 bg-white">
                                             <option value={1}>Paket 1 (Rp 50.000)</option>
                                             <option value={2}>Paket 2 (Rp 100.000)</option>
                                             <option value={3}>Paket 3 (Rp 150.000)</option>
                                         </select>
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                            <Icon name="calendar" className="w-3.5 h-3.5" /> Jadwal Tayang Konten
+                                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                            <Icon name="calendar" className="w-3.5 h-3.5" /> Pilih jadwal tayang
                                         </label>
-                                        <input required type="datetime-local" name="jadwal_tayang" value={formData.jadwal_tayang} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                                        <input type="datetime-local" name="jadwal_tayang" value={formData.jadwal_tayang} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-slate-700" />
                                     </div>
                                 </div>
 
-                                {/* Jasa Desain Checkbox */}
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                        <Icon name="image" className="w-3.5 h-3.5" /> Materi Iklan
+                                    </label>
+                                    <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-300">
+                                        <input type="file" multiple accept="image/*" onChange={handleMateriUpload} id="materi-upload" className="hidden" />
+                                        <label htmlFor="materi-upload" className="flex flex-col items-center justify-center py-4 cursor-pointer">
+                                            {uploadingMateri ? <Icon name="loader" className="animate-spin w-8 h-8 text-indigo-500" /> : <Icon name="plus-circle" className="w-8 h-8 text-slate-400" />}
+                                            <span className="text-[10px] font-bold text-slate-500 mt-2 uppercase tracking-tighter">{uploadingMateri ? 'Mengunggah...' : 'Klik untuk pilih gambar materi'}</span>
+                                        </label>
+                                        
+                                        {formData.materi_urls.length > 0 && (
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 mt-4">
+                                                {formData.materi_urls.map((fileObj, idx) => (
+                                                    <div key={idx} className="relative group bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
+                                                        <div className="aspect-square w-full overflow-hidden rounded-md bg-slate-100">
+                                                            <img src={fileObj.url} className="w-full h-full object-cover" />
+                                                        </div>
+                                                        <div className="mt-1 px-0.5">
+                                                            <p className="text-[8px] font-bold text-slate-400 truncate leading-tight uppercase tracking-tighter">{fileObj.name}</p>
+                                                        </div>
+                                                        <button type="button" onClick={() => removeMateri(idx)} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:scale-110 active:scale-90">
+                                                            <Icon name="x" className="w-2.5 h-2.5" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                                        <Icon name="type" className="w-3.5 h-3.5" /> Caption
+                                    </label>
+                                    <textarea placeholder="Tuliskan caption atau deskripsi iklan Anda di sini..." name="caption" value={formData.caption} onChange={handleChange} rows="3" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none resize-none text-slate-700 transition-colors" />
+                                </div>
+
                                 <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-3">
                                     <div className="flex items-start gap-3">
                                         <div className="pt-0.5">
-                                            <input 
-                                                type="checkbox" 
-                                                id="jasa_desain" 
-                                                name="jasa_desain"
-                                                checked={formData.jasa_desain}
-                                                onChange={handleChange}
-                                                className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                            />
+                                            <input type="checkbox" id="jasa_desain" name="jasa_desain" checked={formData.jasa_desain} onChange={handleChange} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
                                         </div>
                                         <label htmlFor="jasa_desain" className="flex-1 cursor-pointer">
                                             <div className="text-sm font-bold text-slate-800 uppercase tracking-tight">Butuh Jasa Desain?</div>
-                                            <p className="text-[11px] text-slate-600 leading-relaxed">
-                                                Klik jika Anda ingin tim kami yang membuat desain konten. Akan dikenakan biaya tambahan sebesar <span className="font-bold text-indigo-700">Rp 20.000</span>.
-                                            </p>
+                                            <p className="text-[11px] text-slate-600 leading-relaxed">Klik jika Anda ingin tim kami yang membuat desain konten. Akan dikenakan biaya tambahan sebesar <span className="font-bold text-indigo-700">Rp 20.000</span>.</p>
                                         </label>
                                     </div>
                                 </div>
 
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-50 border border-slate-200">
-                                    <div className="space-y-1">
+                                    <div className="space-y-1.5">
                                         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 uppercase tracking-tight">
-                                            <Icon name="upload" className="w-4 h-4 text-indigo-500" /> Bukti Pembayaran
+                                            <Icon name="upload" className="w-4 h-4 text-indigo-500" /> Bukti Pembayaran *
                                         </h3>
-                                        <p className="text-[10px] text-slate-500 font-medium">Unggah screenshot/foto bukti transfer (JPG/PNG)</p>
+                                        <p className="text-[10px] text-slate-500 font-medium">Unggah screenshot/foto bukti transfer</p>
                                     </div>
                                     <input type="file" accept="image/*" onChange={handleFileUpload} id="tf-upload" className="hidden" />
                                     <label htmlFor="tf-upload" className={`px-5 py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 shadow-sm transition-all ${formData.bukti_transfer_url ? 'bg-green-500 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
-                                        {uploading ? <Icon name="loader" className="animate-spin" /> : <Icon name={formData.bukti_transfer_url ? "check" : "upload"} />}
-                                        {uploading ? 'Mengunggah...' : (formData.bukti_transfer_url ? 'Berhasil' : 'Pilih File')}
+                                        {uploading ? <Icon name="loader" className="animate-spin w-3.5 h-3.5" /> : <Icon name={formData.bukti_transfer_url ? "check" : "upload"} className="w-3.5 h-3.5" />}
+                                        {uploading ? 'Mengunggah...' : (formData.bukti_transfer_url ? 'Tersimpan' : 'Pilih File')}
                                     </label>
                                 </div>
 
-                                {/* Bagian Perlindungan Pengguna */}
                                 <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 space-y-2">
                                     <div className="flex items-center gap-2 text-amber-700">
                                         <Icon name="shield-alert" className="w-5 h-5" />
                                         <h4 className="text-sm font-black uppercase tracking-wider">Perlindungan Pengguna</h4>
                                     </div>
-                                    <p className="text-[11px] text-amber-900 leading-relaxed font-semibold">
-                                        Kami berkomitmen menjaga keamanan platform. Iklan palsu, manipulatif, atau berindikasi penipuan akan dihapus dan dilaporkan ke pihak berwenang.
-                                    </p>
+                                    <p className="text-[11px] text-amber-900 leading-relaxed font-semibold">Kami berkomitmen menjaga keamanan platform. Iklan palsu, manipulatif, atau berindikasi penipuan akan dihapus dan dilaporkan ke pihak berwenang.</p>
                                 </div>
 
-                                <button type="submit" disabled={loading || uploading} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 shadow-indigo-100">
-                                    {loading ? <Icon name="loader" className="animate-spin" /> : <><Icon name="send" /> Order Iklan</>}
+                                <button type="submit" disabled={loading || uploading || uploadingMateri} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 shadow-indigo-100">
+                                    {loading ? <Icon name="loader" className="animate-spin w-5 h-5" /> : <><Icon name="send" className="w-5 h-5" /> Order Iklan Sekarang</>}
                                 </button>
                             </form>
                         </div>
