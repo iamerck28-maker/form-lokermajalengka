@@ -7,7 +7,7 @@ import {
 
 /**
  * KONFIGURASI SUPABASE
- * Pastikan URL dan Key sesuai dengan dashboard Supabase Anda.
+ * Ganti PROJECT_ID dan ANON_KEY jika Anda menggunakan akun Supabase berbeda.
  */
 const PROJECT_ID = 'gkyojapzrnfufbvtwbdu';
 const SUPABASE_URL = `https://${PROJECT_ID}.supabase.co`;
@@ -34,18 +34,20 @@ export default function App() {
     status_posting: 'scheduled'
   });
 
+  // Fungsi inisialisasi Supabase menggunakan SDK dari CDN (window.supabase)
   const initSupabase = useCallback(() => {
     try {
-      if (window.supabase && !supabase) {
+      if (window.supabase) {
         const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         setSupabase(client);
       }
     } catch (err) {
-      console.error("Gagal memuat SDK Supabase:", err);
+      console.error("Gagal menginisialisasi Supabase:", err);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
+    // Memuat Supabase SDK secara dinamis jika belum ada (untuk deployment langsung di GitHub)
     const scriptId = 'supabase-sdk';
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script');
@@ -54,7 +56,7 @@ export default function App() {
       script.async = true;
       script.onload = initSupabase;
       document.body.appendChild(script);
-    } else {
+    } else if (window.supabase) {
       initSupabase();
     }
   }, [initSupabase]);
@@ -107,7 +109,10 @@ export default function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase) {
+      setStatus({ type: 'error', message: 'Sistem sedang memuat, silakan coba lagi dalam beberapa detik.' });
+      return;
+    }
     
     if (!formData.bukti_transfer_url) {
       setStatus({ type: 'error', message: 'Mohon unggah bukti transfer terlebih dahulu!' });
